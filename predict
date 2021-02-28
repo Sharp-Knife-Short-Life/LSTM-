@@ -1,0 +1,104 @@
+# -*- coding:utf-8 -*-
+import argparse
+import tensorflow as tf
+import utils
+import numpy as np
+import os
+
+np.set_printoptions(threshold=np.inf)
+x_train, y_train = utils.get_data("./data", 800)
+x_train = x_train.reshape(x_train.shape[0], x_train.shape[1], 1)
+
+
+def load_graph(frozen_graph_filename):
+    # We parse the graph_def file
+    with tf.gfile.GFile(frozen_graph_filename, "rb") as f:
+        graph_def = tf.GraphDef()
+        graph_def.ParseFromString(f.read())
+
+    # We load the graph_def in the default graph
+    with tf.Graph().as_default() as graph:
+        tf.import_graph_def(
+            graph_def,
+            input_map=None,
+            return_elements=None,
+            name="prefix",
+            op_dict=None,
+            producer_op_list=None
+        )
+    return graph
+
+
+if __name__ == '__main__':
+ #   os.system('python C:\\Users\\Alex\\Desktop\\zyz\\Y\\freeze.py')
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--frozen_model_filename", default="tmp/frozen_model.pb", type=str, help="Frozen model file to import")
+    args = parser.parse_args()
+    # 加载已经将参数固化后的图
+    graph = load_graph(args.frozen_model_filename)
+
+    x = graph.get_tensor_by_name('prefix/input_x:0')
+    y = graph.get_tensor_by_name('prefix/pred_y:0')
+
+    f= open(r"C:\Users\Alex\Desktop\zyz\Y\tmp\result.txt", "w" , encoding="utf-8")
+
+    with tf.Session(graph=graph) as sess:
+        y_out = sess.run(y, feed_dict={
+            x:x_train})
+        print(y_out)  # [[ 0.]] Yay!
+    np.save("results.npy", y_out)
+    y_read = np.load("results.npy")
+    print('_________________________________________________________________________')
+    #print(y_train)
+    #print("finish")
+    c1=c2=c3=c4=(int)(0)
+    for i in range(0,799):
+        if(i%10==0 and i!=0):
+            if(c1>=c2 and c1>=c3 and c1>=c4):
+                f.write(str(c1))
+                f.write(str(c2))
+                f.write(str(c3))
+                f.write(str(c4))
+                f.write(str("   第"))
+                f.write(str(i/10))
+                f.write(str("时序指令:  向前\n"))
+                c1 = c2 = c3 = c4 = 0
+                continue
+            if (c2 >= c1  and  c2 >= c3  and  c2 >= c4):
+                f.write(str(c1))
+                f.write(str(c2))
+                f.write(str(c3))
+                f.write(str(c4))
+                f.write(str("   第"))
+                f.write(str(i/10))
+                f.write(str("时序指令:  向后\n"))
+                c1 = c2 = c3 = c4 = 0
+                continue
+            if (c3 >= c2  and  c3 >= c1  and  c3 >= c4):
+                f.write(str(c1))
+                f.write(str(c2))
+                f.write(str(c3))
+                f.write(str(c4))
+                f.write(str("   第"))
+                f.write(str(i/10))
+                f.write(str("时序指令:  向左\n"))
+                c1 = c2 = c3 = c4 = 0
+                continue
+            if (c4 >= c2  and  c4 >= c3  and  c4 >= c1):
+                f.write(str(c1))
+                f.write(str(c2))
+                f.write(str(c3))
+                f.write(str(c4))
+                f.write(str("   第"))
+                f.write(str(i/10))
+                f.write(str("时序指令:  向右\n"))
+                c1 = c2 = c3 = c4 = 0
+                continue
+
+        if(y_read[i][0]>=y_read[i][1] and y_read[i][0]>=y_read[i][2] and y_read[i][0]>=y_read[i][3]  ): c1=c1+1
+        if (y_read[i][1]>=y_read[i][0] and y_read[i][1]>=y_read[i][2] and y_read[i][1]>=y_read[i][3] ): c2 = c2 + 1
+        if (y_read[i][2]>=y_read[i][1] and y_read[i][2]>=y_read[i][0] and y_read[i][2]>=y_read[i][3] ): c3 = c3 + 1
+        if (y_read[i][3]>=y_read[i][1] and y_read[i][3]>=y_read[i][2] and y_read[i][3]>=y_read[i][0] ): c4 = c4 + 1
+    print(y_read[1][2])
+    f.write(str(y_read))
+    f.close()

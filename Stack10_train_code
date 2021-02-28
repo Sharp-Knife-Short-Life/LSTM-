@@ -1,0 +1,148 @@
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import utils
+import time
+
+
+batchSize = 10
+lstmUnits = 32
+numClasses = 4
+lr = 0.0002
+halfLength = 30
+
+x_train, y_train = utils.get_data("./data", 800)
+#print(x_train.shape , y_train.shape)
+x_test, y_test = utils.get_data("./test" , 200)
+#print(x_test, y_test)
+
+x_train = x_train.reshape(x_train.shape[0], x_train.shape[1])
+x_test = x_test.reshape(x_test.shape[0], x_test.shape[1])
+
+x_train = x_train.reshape(x_train.shape[0], x_train.shape[1], 1)
+x_test = x_test.reshape(x_test.shape[0], x_test.shape[1], 1)
+
+
+
+'''
+x_train = tf.expand_dims(x_train, axis=2)
+x_test = tf.expand_dims(x_test, axis=2)
+'''
+def stack10_lstm_att(epoches, data, labels, data_test, labels_test):
+
+    tf.reset_default_graph()
+
+#    data=tf.convert_to_tensor(data)
+ #   labels = tf.convert_to_tensor(labels)
+  #  data_test = tf.convert_to_tensor(data_test)
+   # labels_test = tf.convert_to_tensor(labels_test)
+    print('--------------------------------------------------------------------------------')
+    print(data.shape, labels.shape)
+    Y = tf.compat.v1.placeholder(tf.float32, [None, 4])
+    X = tf.compat.v1.placeholder(tf.float32, [None, halfLength,1], name= "input_x")
+
+ #  lstmCell1 = tf.contrib.rnn.BasicLSTMCell(lstmUnits)
+ #   lstmCell1 = tf.contrib.rnn.AttentionCellWrapper(lstmCell1, attn_length=15)
+
+    # Forward passes
+    cells = []
+    for n in range(9):
+        cells.append(tf.contrib.rnn.BasicLSTMCell(lstmUnits, state_is_tuple=True))
+    cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
+    cell = tf.contrib.rnn.AttentionCellWrapper(cell, attn_length=15)
+
+    lstmCell2 = tf.contrib.rnn.BasicLSTMCell(lstmUnits)
+    lstmCell2 = tf.contrib.rnn.DropoutWrapper(cell=lstmCell2, output_keep_prob=0.75)
+    lstmCell2 = tf.contrib.rnn.AttentionCellWrapper(lstmCell2, attn_length=15)
+    stack_lstm = tf.nn.rnn_cell.MultiRNNCell([cell, lstmCell2])
+    # stack_lstm = tf.contrib.rnn.AttentionCellWrapper(stack_lstm,attn_length = 15)
+
+    value,state = tf.nn.dynamic_rnn(stack_lstm, X,  dtype=tf.float32)
+    print("output.shape:", value.shape)
+    print("len of state tuple", len(state))
+
+    weight = tf.Variable(tf.random.truncated_normal([lstmUnits, numClasses]))
+    bias = tf.Variable(tf.constant(0.1, shape=[numClasses]))
+    value = tf.transpose(value, [1, 0, 2])
+    last = tf.gather(value, int(value.get_shape()[0]) - 1)
+    pred_y = tf.nn.softmax(tf.matmul(last, weight) + bias , name="pred_y")
+    rd = tf.round(tf.nn.softmax(tf.matmul(last, weight) + bias))
+    cost = -tf.reduce_sum(Y * tf.math.log(pred_y))
+
+    optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=lr).minimize(cost)
+
+    with tf.name_scope('accuracy'):
+        correct_prediction = tf.equal(tf.argmax(pred_y, 1), tf.argmax(Y, 1))
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+
+    acc_list = []
+    loss_list = []
+    sess = tf.compat.v1.Session()
+    sess.run(tf.compat.v1.global_variables_initializer())
+    tf.compat.v1.add_to_collection('optimizer',optimizer)
+    tf.compat.v1.add_to_collection('pred_y',pred_y)
+    tf.compat.v1.add_to_collection('accuracy',accuracy)
+    saver = tf.compat.v1.train.Saver()
+
+    print('--------------------------------------------------------------------------------')
+    print(data.shape, labels.shape)
+
+    start_time = time.time()
+
+    for i in range(epoches):
+        for start, end in zip(range(0, data.shape[0], batchSize), range(batchSize, data.shape[0]+1, batchSize)):
+            sess.run(optimizer, feed_dict={X: data[start:end], Y: labels[start:end]})  # 分离出batchsize个数据去迭代运算
+
+        trainingAcc, train_correctnums, softmax_train, predict_train = sess.run(
+            [accuracy, correct_prediction, pred_y, rd], feed_dict={X: data, Y: labels})
+        testingAcc, predict_test = sess.run([accuracy, rd], feed_dict={X: data_test, Y: labels_test})
+        print('Epoch ' + str(i + 1) + ', training accuracy: {0:.2%}'.format(
+            trainingAcc) + ', test accuracy: {0:.2%}'.format(testingAcc))
+        acc_list.append(trainingAcc)
+        loss_list.append(testingAcc)
+#        lossingAcc= sess.run(loss,feed_dict = {X: data, Y: labels})
+ #       Acc.append('%.4f'%trainingAcc)
+  #      Loss.append('%.4f'%lossingAcc)
+   #     if (i == 150):
+    #        saver.save(sess, 'tmp/model_LR_test', global_step=i)  # 保存模型
+     #       print('%.2f' % trainingAcc)
+
+    end_time = time.time()
+    train_time = end_time - start_time
+    print("train_time = ",train_time)
+    # test
+    start_time = time.time()
+    test_acc, output, rd = sess.run([accuracy, pred_y, rd], feed_dict={X: data_test, Y: labels_test})
+    end_time = time.time()
+    test_time = end_time - start_time
+    print("test_time = ",test_time)
+    print(test_acc)
+    y_true = np.argmax(labels_test, 1)
+    res = np.argmax(output, 1)
+    print(res.shape)
+    # print(res)
+    # print(y_pred.shape)
+    # print(res==y_pred)
+
+    ret_kv = {}  # return data
+    ret_kv['acc_list'] = acc_list
+    ret_kv['loss_list'] = loss_list
+    ret_kv['train_time'] = train_time
+    ret_kv['test_time'] = test_time
+
+    dict_prec_recall = utils.caculate_value(y_true, res)  # 标签值
+    dict_roc_auc = utils.compute_roc_auc(labels_test, output)
+
+    ret_kv.update(dict_prec_recall)
+    ret_kv.update(dict_roc_auc)
+    return ret_kv
+if __name__ == '__main__':
+    #bi_lstm(800, x_train, y_train , x_test , y_test)
+    tf.reset_default_graph()
+    lstm_att_map = stack10_lstm_att(300, x_train , y_train , x_test , y_test)
+
+    utils.plot_fig()
+    plt.plot(lstm_att_map['fpr'], lstm_att_map['tpr'], c='m', lw=2, alpha=0.7, marker='.',
+             label='{} (AUC={:.3f})'.format("LSTM_att", lstm_att_map['auc']))
+    plt.savefig('fig_roc_auc_stack10compare.pdf')
+    plt.show()
